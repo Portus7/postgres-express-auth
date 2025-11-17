@@ -2,7 +2,7 @@
 FROM node:18-alpine
 
 # Directorio de trabajo dentro del contenedor
-WORKDIR /app
+WORKDIR /
 
 # Copiamos solo package.json (y package-lock si existe) para aprovechar la cache
 COPY package*.json ./
