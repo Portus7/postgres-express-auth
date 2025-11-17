@@ -2,7 +2,7 @@
 FROM node:18-alpine
 
 # Directorio de trabajo dentro del contenedor
-WORKDIR /
+WORKDIR /app
 
 # Copiamos solo package.json (y package-lock si existe) para aprovechar la cache
 COPY package*.json ./
@@ -22,4 +22,4 @@ ENV NODE_ENV=production \
 EXPOSE 3000
 
 # Comando para arrancar tu backend
-CMD ["node", "index.js"]
+CMD ["node", "db_conexion.js"]
