@@ -35,9 +35,7 @@ app.get('/health', async (req, res) => {
 // 🔁 EJEMPLO: supongamos que tienes una tabla "customers"
 app.get('/auth_db', async (req, res) => {
   try {
-    const result = await pool.query(`SELECT tablename
-FROM pg_tables
-WHERE schemaname NOT IN ('pg_catalog', 'information_schema');`);
+    const result = await pool.query('SELECT * FROM auth_db');
     res.json(result.rows);
   } catch (err) {
     console.error(err);
