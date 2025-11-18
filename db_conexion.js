@@ -35,10 +35,10 @@ async function saveAgency(locationIdFromReq, tokenData) {
 
   // IMPORTANTE: la columna tokenres debe ser JSONB en Postgres
   const sql = `
-    INSERT INTO auth_db (locationid, tokenres)
+    INSERT INTO auth_db (locationid, raw_token)
     VALUES ($1, $2::jsonb)
     ON CONFLICT (locationid) DO UPDATE
-    SET tokenres = EXCLUDED.tokenres
+    SET raw_token = EXCLUDED.raw_token
   `;
 
   await pool.query(sql, [locationId, JSON.stringify(tokenData)]);
