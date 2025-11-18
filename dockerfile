@@ -1,25 +1,36 @@
-# Imagen base de Node
-FROM node:18-alpine
+# ✅ Node 20 + Debian (estable para binarios nativos)
+FROM node:20-bookworm-slim
 
-# Directorio de trabajo dentro del contenedor
+# Paquetes de build por si algún módulo los requiere
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 make g++ ca-certificates tzdata \
+ && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
-# Copiamos solo package.json (y package-lock si existe) para aprovechar la cache
+# Copia manifests e instala prod deps de forma reproducible
 COPY package*.json ./
+RUN npm ci --omit=dev
 
-# Instalamos dependencias
-RUN npm install --only=production
-
-# Copiamos el resto del código
+# Resto del código
 COPY . .
 
-# Variables de entorno por defecto dentro del contenedor
-# (las de Easypanel las sobreescriben)
-ENV NODE_ENV=production \
-    PORT_DB=3000
+# Carpeta de sesiones para Baileys (persistida con volumen)
+RUN mkdir -p /app/sessions && chown -R node:node /app
 
-# Puerto en el que escucha tu app dentro del contenedor
-EXPOSE 3000
+# Corre como usuario no root
+USER node
 
-# Comando para arrancar tu backend
-CMD ["node", "db_conexion.js"]
+# Variables básicas
+ENV NODE_ENV=production
+ENV PORT=3001
+
+# Expón el puerto interno real de tu app
+EXPOSE 3001
+
+# (Opcional) healthcheck si tienes /status
+HEALTHCHECK --interval=30s --timeout=3s --start-period=20s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3001)+'/status').then(r=>r.ok?process.exit(0):process.exit(1)).catch(()=>process.exit(1))"
+
+# Arranque
+CMD ["node", "src/index.js"]
