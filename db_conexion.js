@@ -35,7 +35,7 @@ app.get('/health', async (req, res) => {
 // 🔁 EJEMPLO: supongamos que tienes una tabla "customers"
 app.get('/auth_db', async (req, res) => {
   try {
-    const result = await pool.query('SELECT * FROM auth_db');
+    const result = await pool.query('SELECT current_database();');
     res.json(result.rows);
   } catch (err) {
     console.error(err);
