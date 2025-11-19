@@ -4,6 +4,7 @@ const express = require('express');
 const cors = require('cors');
 const { Pool } = require('pg');
 const axios = require("axios");
+const request = require("request")
 
 const app = express();
 app.use(cors());
@@ -79,7 +80,7 @@ app.get("/oauth/callback", async (req, res) => {
     );
 
     const tokens = tokenRes.data; // { access_token, refresh_token, expires_in, scope, userType, companyId, ... }
-
+    console.log(tokens)
     // Guardado base (tu esquema actual)
     const locationId = await saveAgency(req.query.locationId, tokens);
 
@@ -111,6 +112,42 @@ app.get("/oauth/callback", async (req, res) => {
     }
 
     // No devuelvas tokens al navegador por seguridad
+
+    // Agregar boton de personalizado
+    var options = {
+      'method': 'POST',
+      'url': 'https://services.leadconnectorhq.com/custom-menus/',
+      'headers': {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify({
+        "title": "Custom Menu",
+        "url": "https://custom-menus.com/",
+        "icon": {
+        "name": "yin-yang",
+        "fontFamily": "fab"
+        },
+        "showOnCompany": true,
+        "showOnLocation": true,
+        "showToAllLocations": true,
+        "openMode": "iframe",
+        "locations": [
+          "gfWreTIHL8pDbggBb7af",
+          "67WreTIHL8pDbggBb7ty"
+        ],
+        "userRole": "all",
+        "allowCamera": false,
+        "allowMicrophone": false
+        })
+      };
+
+      request(options, function (error, response) {
+        if (error) throw new Error(error);
+          console.log(response.body);
+        });
+
     return res.send("¡App instalada correctamente! Las credenciales se guardaron en la base de datos.");
   } catch (err) {
     const status = err.response?.status || 500;
