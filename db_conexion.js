@@ -26,10 +26,8 @@ const pool = new Pool({
 //});
 
 // -------- helper para guardar en tu tabla actual --------
-async function saveAgency(locationIdFromReq, tokenData) {
-  console.log("location:      ", locationIdFromReq, "token:      ", tokenData )
-  const locationId = "WupltINqouoUpUEqpa4K"
-
+async function saveAgency(locationId, tokenData) {
+  console.log("👉 Guardando en BD. locationId:", locationId);
   const sql = `
     INSERT INTO auth_db (locationid, raw_token)
     VALUES ($1, $2::jsonb)
@@ -40,10 +38,45 @@ async function saveAgency(locationIdFromReq, tokenData) {
   return locationId;
 }
 
+// 🔎 helper para traer locations donde la app está instalada
+async function getInstalledLocations(tokens) {
+  try {
+    const res = await axios.get(
+      "https://services.leadconnectorhq.com/oauth/installedLocations",
+      {
+        headers: {
+          Authorization: `Bearer ${tokens.access_token}`,
+          Version: "2021-07-28",
+          Accept: "application/json",
+        },
+        params: {
+          companyId: tokens.companyId,
+          isInstalled: true,
+          // appId: process.env.GHL_APP_ID, // opcional si quieres filtrar por ID de app
+          limit: 50,
+        },
+        timeout: 15000,
+      }
+    );
+
+    console.log("📍 installedLocations:", res.data);
+    return res.data?.locations || [];
+  } catch (e) {
+    console.error(
+      "❌ Error llamando /oauth/installedLocations:",
+      e.response?.status,
+      e.response?.data || e.message
+    );
+    return [];
+  }
+}
+
+
+// -------- ruta de callback OAuth (única) --------
 // -------- ruta de callback OAuth (única) --------
 app.get("/oauth/callback", async (req, res) => {
   const { code, locationId: locationIdFromQuery } = req.query;
-  console.log("Respuesta: ", req)
+
   if (!code) {
     return res.status(400).send("Falta el parámetro 'code' en la URL de callback.");
   }
@@ -55,7 +88,7 @@ app.get("/oauth/callback", async (req, res) => {
       client_secret: process.env.GHL_CLIENT_SECRET,
       grant_type: "authorization_code",
       code,
-      user_type: "Company", 
+      user_type: "Company", // token de agency
       redirect_uri: process.env.OAUTH_REDIRECT_URI,
     });
 
@@ -71,36 +104,64 @@ app.get("/oauth/callback", async (req, res) => {
       }
     );
 
-    const tokens = tokenRes.data; // { access_token, userType, companyId, ... }
-    // console.log(tokens); // ⚠️ No loguees tokens en prod
+    const tokens = tokenRes.data;
+    console.log("🔐 Tokens recibidos (resumido):", {
+      userType: tokens.userType,
+      companyId: tokens.companyId,
+      scopes: tokens.scope,
+    });
 
-    // 2) Guarda tokens
-    const locationId = await saveAgency(locationIdFromQuery, tokens);
+    // 2) Resolver locationId (query -> tokens -> installedLocations)
+    let locationId =
+      locationIdFromQuery || tokens.locationId || null;
 
-    // 3) Crear Custom Menu SOLO para la Location que instaló
+    if (!locationId && tokens.userType === "Company") {
+      console.log("ℹ️ No llegó locationId en query ni en token. Consultando /oauth/installedLocations...");
+      const locations = await getInstalledLocations(tokens);
+
+      if (locations.length > 0) {
+        // 👇 aquí decides cuál usar (primera, o filtrar por nombre, etc.)
+        locationId = locations[0].id;
+        console.log("📍 Usando locationId desde installedLocations:", locationId);
+      } else {
+        console.warn("⚠️ No se encontraron locations instaladas para esta app.");
+      }
+    }
+
+    if (!locationId) {
+      console.warn(
+        "⚠️ Aun sin locationId después de todo. No se podrá crear custom menu limitado."
+      );
+    }
+
+    // 3) Guarda tokens con ese locationId (aunque sea null o 'agency')
+    if (locationId) {
+      await saveAgency(locationId, tokens);
+    }
+
+    // 4) Crear Custom Menu SOLO para la Location que resolvimos
     try {
-      // Usa token de Agencia (del OAuth) o un PIT de respaldo
       let agencyAuth = null;
       if (tokens.userType === "Company") {
-        agencyAuth = tokens.access_token; // token de agencia
+        agencyAuth = tokens.access_token;
       } else if (process.env.GHL_PIT) {
-        agencyAuth = process.env.GHL_PIT; // fallback si el OAuth devolvió Location
+        agencyAuth = process.env.GHL_PIT;
       }
 
       if (!agencyAuth) {
         console.warn("No hay token de agencia ni PIT; omito crear Custom Menu.");
       } else if (!locationId) {
-        console.warn("No llegó locationId; no puedo limitar el menú a una subcuenta.");
+        console.warn("No hay locationId; creo Custom Menu general o ninguno.");
+        // Podrías crear un menú global showToAllLocations: true si quieres
       } else {
         const bodyMenu = {
-          title: "Custom Menu",
-          url: "https://custom-menus.com/", 
+          title: "WhatsApp Bridge",
+          url: process.env.CUSTOM_MENU_URL || "https://tu-front-o-panel.com/",
           icon: { name: "yin-yang", fontFamily: "fab" },
 
-          showOnCompany: true,
+          showOnCompany: false,
           showOnLocation: true,
 
-          // 🔒 SOLO la Location específica
           showToAllLocations: false,
           locations: [locationId],
 
@@ -126,15 +187,15 @@ app.get("/oauth/callback", async (req, res) => {
 
         console.log("✅ Custom Menu creado:", createMenuRes.data);
       }
-      } catch (e) {
-        console.error(
-          "❌ Error creando Custom Menu:",
-          e.response?.status,
-          e.response?.data || e.message
-        );
-      }
+    } catch (e) {
+      console.error(
+        "❌ Error creando Custom Menu:",
+        e.response?.status,
+        e.response?.data || e.message
+      );
+    }
 
-    // 4) (Opcional) Si necesitas token de la Location para operar endpoints de subcuenta:
+    // 5) (Opcional) Token de Location
     if (tokens.userType === "Company" && locationId) {
       try {
         const locParams = new URLSearchParams({
@@ -159,7 +220,11 @@ app.get("/oauth/callback", async (req, res) => {
         const locationTokens = locTokenRes.data; // userType: "Location"
         await saveAgency(locationId, { ...tokens, locationAccess: locationTokens });
       } catch (e) {
-        console.error("❌ Error obteniendo token de Location:", e.response?.status, e.response?.data || e.message);
+        console.error(
+          "❌ Error obteniendo token de Location:",
+          e.response?.status,
+          e.response?.data || e.message
+        );
       }
     }
 
