@@ -113,41 +113,6 @@ app.get("/oauth/callback", async (req, res) => {
 
     // No devuelvas tokens al navegador por seguridad
 
-    // Agregar boton de personalizado
-    var options = {
-      'method': 'POST',
-      'url': 'https://services.leadconnectorhq.com/custom-menus/',
-      'headers': {
-        'Content-Type': 'application/json',
-        'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`
-      },
-      body: JSON.stringify({
-        "title": "Custom Menu",
-        "url": "https://custom-menus.com/",
-        "icon": {
-        "name": "yin-yang",
-        "fontFamily": "fab"
-        },
-        "showOnCompany": true,
-        "showOnLocation": true,
-        "showToAllLocations": true,
-        "openMode": "iframe",
-        "locations": [
-          "gfWreTIHL8pDbggBb7af",
-          "67WreTIHL8pDbggBb7ty"
-        ],
-        "userRole": "all",
-        "allowCamera": false,
-        "allowMicrophone": false
-        })
-      };
-
-      request(options, function (error, response) {
-        if (error) throw new Error(error);
-          console.log(response.body);
-        });
-
     return res.send("¡App instalada correctamente! Las credenciales se guardaron en la base de datos.");
   } catch (err) {
     const status = err.response?.status || 500;
@@ -213,9 +178,51 @@ app.get("/oauth/callback", async (req, res) => {
       redirect_uri: "https://express.clicandapp.com/oauth/callback"
     }
   );
-
   // guardar tokens en DB
   saveAgency(locationId, tokenRes.data);
+
+  // Generar el boton personalizado
+  try {
+  const agencyToken = tokens.access_token; // <- token de AGENCIA
+  const bodyMenu = {
+    title: "Custom Menu",
+    url: "https://custom-menus.com/",
+    icon: { name: "yin-yang", fontFamily: "fab" },
+
+    showOnCompany: true,
+    showOnLocation: true,
+
+    // Opción A: visible para TODAS las subcuentas (no envíes 'locations')
+    showToAllLocations: true,
+    openMode: "iframe",
+    userRole: "all",
+    allowCamera: false,
+    allowMicrophone: false,
+  };
+
+  // // Opción B: solo para ubicaciones específicas
+  // bodyMenu.showToAllLocations = false;
+  // bodyMenu.locations = [locationId]; // usa el que guardaste/recibiste
+
+  const createMenuRes = await axios.post(
+    "https://services.leadconnectorhq.com/custom-menus/",
+    bodyMenu,
+    {
+      headers: {
+        Authorization: `Bearer ${agencyToken}`,
+        Accept: "application/json",
+        "Content-Type": "application/json",
+        Version: "2021-07-28",
+      },
+      timeout: 15000,
+    }
+  );
+
+  console.log("✅ Custom Menu creado:", createMenuRes.data);
+} catch (e) {
+  console.error("❌ Error creando Custom Menu:", e.response?.status, e.response?.data || e.message);
+  // No detengas la instalación por esto; solo loguea
+}
 
   res.send(`App instalada correctamente! a la subagencia con locationid=${locationId}, tokengenerado=${tokenRes.data}`);
 });
