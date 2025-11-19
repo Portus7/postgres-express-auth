@@ -28,7 +28,7 @@ const pool = new Pool({
 // -------- helper para guardar en tu tabla actual --------
 async function saveAgency(locationIdFromReq, tokenData) {
   console.log("location:      ", locationIdFromReq, "token:      ", tokenData )
-  const locationId = locationIdFromReq || tokenData.locationId || null;
+  const locationId = "WupltINqouoUpUEqpa4K"
 
   const sql = `
     INSERT INTO auth_db (locationid, raw_token)
@@ -126,13 +126,13 @@ app.get("/oauth/callback", async (req, res) => {
 
         console.log("✅ Custom Menu creado:", createMenuRes.data);
       }
-    } catch (e) {
-      console.error(
-        "❌ Error creando Custom Menu:",
-        e.response?.status,
-        e.response?.data || e.message
-      );
-    }
+      } catch (e) {
+        console.error(
+          "❌ Error creando Custom Menu:",
+          e.response?.status,
+          e.response?.data || e.message
+        );
+      }
 
     // 4) (Opcional) Si necesitas token de la Location para operar endpoints de subcuenta:
     if (tokens.userType === "Company" && locationId) {
