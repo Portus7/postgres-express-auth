@@ -43,7 +43,7 @@ async function saveAgency(locationIdFromReq, tokenData) {
 // -------- ruta de callback OAuth (única) --------
 app.get("/oauth/callback", async (req, res) => {
   const { code, locationId: locationIdFromQuery } = req.query;
-  console.log(req.query)
+  console.log("Respuesta: ", req)
   if (!code) {
     return res.status(400).send("Falta el parámetro 'code' en la URL de callback.");
   }
