@@ -20,13 +20,14 @@ const pool = new Pool({
 });
 
 // Webhook (placeholder)
-app.post("/ghl/webhook", (req, res) => {
-  console.log("Mensaje entrante desde GHL:", req.body);
-  res.status(200).json({ received: true });
-});
+//app.post("/ghl/webhook", (req, res) => {
+//  console.log("Mensaje entrante desde GHL:", req.body);
+//  res.status(200).json({ received: true });
+//});
 
 // -------- helper para guardar en tu tabla actual --------
 async function saveAgency(locationIdFromReq, tokenData) {
+  console.log("location:      ", locationIdFromReq, "token:      ", tokenData )
   const locationId = locationIdFromReq || tokenData.locationId || null;
 
   const sql = `
@@ -54,7 +55,7 @@ app.get("/oauth/callback", async (req, res) => {
       client_secret: process.env.GHL_CLIENT_SECRET,
       grant_type: "authorization_code",
       code,
-      user_type: "Company", // 👈 NO 'Location' aquí
+      user_type: "Company", 
       redirect_uri: process.env.OAUTH_REDIRECT_URI,
     });
 
