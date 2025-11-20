@@ -120,6 +120,12 @@ app.post("/ghl/app-webhook", async (req, res) => {
     const { type, locationId, companyId } = event;
     
     // Solo nos interesa INSTALL de tipo Location
+    // INSTALL
+    // UNINSTALL
+    // PLAN_UPDATED
+    // PLAN_CANCELLED
+    // USER_ADDED
+    // USER_REMOVED
     console.log("Se ejecuto este endpoint!!!!", "locationid:", locationId, "companyid: ", companyId)
     if (type !== "INSTALL") {
       console.log("ℹ️ Evento no manejado (tipo distinto de INSTALL/Location).");
@@ -173,7 +179,7 @@ app.post("/ghl/app-webhook", async (req, res) => {
         const bodyMenu = {
           title: "WhatsApp - Clic&App",
           url: process.env.CUSTOM_MENU_URL_WA || "https://wa.clicandapp.com/",
-          icon: { name: "yin-yang", fontFamily: "fab" },
+          icon: { name: "whatsapp", fontFamily: "fab" },
 
           showOnCompany: false,
           showOnLocation: true,
