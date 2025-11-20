@@ -170,8 +170,8 @@ app.post("/ghl/app-webhook", async (req, res) => {
       // 4) Crear Custom Menu SOLO para esta Location
       try {
         const bodyMenu = {
-          title: "WhatsApp Bridge",
-          url: process.env.CUSTOM_MENU_URL || "https://tu-front-o-panel.com/",
+          title: "WhatsApp - Clic&App",
+          url: process.env.CUSTOM_MENU_URL_WA || "https://wa.clicandapp.com/",
           icon: { name: "yin-yang", fontFamily: "fab" },
 
           showOnCompany: false,
