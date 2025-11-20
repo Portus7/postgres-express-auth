@@ -120,7 +120,7 @@ app.post("/ghl/app-webhook", async (req, res) => {
     const { type, locationId, companyId } = event;
     
     // Solo nos interesa INSTALL de tipo Location
-    console.log("Se ejecuto este endpoint!!!", "locationid:", locationId, "companyid: ", companyId)
+    console.log("Se ejecuto este endpoint!!!!", "locationid:", locationId, "companyid: ", companyId)
     if (type !== "INSTALL") {
       console.log("ℹ️ Evento no manejado (tipo distinto de INSTALL/Location).");
       return res.status(200).json({ ignored: true });
