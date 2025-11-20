@@ -89,7 +89,7 @@ app.get("/oauth/callback", async (req, res) => {
       grant_type: "authorization_code",
       code,
       user_type: "Company",
-      redirect_uri: process.env.OAUTH_REDIRECT_URI,
+      //redirect_uri: process.env.OAUTH_REDIRECT_URI,
     });
 
     const tokenRes = await axios.post(
