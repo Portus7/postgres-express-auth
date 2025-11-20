@@ -113,14 +113,14 @@ app.get("/oauth/callback", async (req, res) => {
 // Configura esta URL en el Marketplace de tu App
 // ─────────────────────────────
 app.post("/ghl/app-webhook", async (req, res) => {
-  console.log("Se ejecuto este endpoint!!!", req)
   try {
     const event = req.body;
     console.log("🔔 App Webhook recibido:", JSON.stringify(event, null, 2));
-
+    
     const { type, installType, locationId, companyId } = event;
-
+    
     // Solo nos interesa INSTALL de tipo Location
+    console.log("Se ejecuto este endpoint!!!", type, installType)
     if (type !== "INSTALL" || installType !== "Location") {
       console.log("ℹ️ Evento no manejado (tipo distinto de INSTALL/Location).");
       return res.status(200).json({ ignored: true });
