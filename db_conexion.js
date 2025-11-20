@@ -113,6 +113,7 @@ app.get("/oauth/callback", async (req, res) => {
 // Configura esta URL en el Marketplace de tu App
 // ─────────────────────────────
 app.post("/ghl/app-webhook", async (req, res) => {
+  console.log("Se ejecuto este endpoint!!!", req)
   try {
     const event = req.body;
     console.log("🔔 App Webhook recibido:", JSON.stringify(event, null, 2));
