@@ -103,7 +103,7 @@ app.get("/oauth/callback", async (req, res) => {
         timeout: 15000,
       }
     );
-
+    console.log(tokens)
     const tokens = tokenRes.data;
     console.log("🔐 Tokens recibidos (resumido):", {
       userType: tokens.userType,
