@@ -51,6 +51,7 @@ async function getInstalledLocations(tokens) {
         },
         params: {
           companyId: tokens.companyId,
+          userId: tokens.userId,
           isInstalled: true,
           appId: process.env.GHL_APP_ID_WA, // opcional si quieres filtrar por ID de app
           limit: 50,
