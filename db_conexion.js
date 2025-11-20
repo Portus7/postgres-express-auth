@@ -1,5 +1,7 @@
+// src/index.js (o donde tengas este backend)
 const path = require("path");
 require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
+
 const express = require("express");
 const cors = require("cors");
 const { Pool } = require("pg");
@@ -9,7 +11,9 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Pool de conexión a Postgres
+// ─────────────────────────────
+// PostgreSQL
+// ─────────────────────────────
 const pool = new Pool({
   host: process.env.PGHOST,
   port: process.env.PGPORT,
@@ -19,14 +23,13 @@ const pool = new Pool({
   ssl: process.env.PGSSLMODE === "require" ? { rejectUnauthorized: false } : false,
 });
 
-// Webhook (placeholder)
-//app.post("/ghl/webhook", (req, res) => {
-//  console.log("Mensaje entrante desde GHL:", req.body);
-//  res.status(200).json({ received: true });
-//});
+// ID especial para guardar el token de agencia en auth_db
+const AGENCY_ROW_ID = "__AGENCY__";
 
-// -------- helper para guardar en tu tabla actual --------
-async function saveAgency(locationId, tokenData) {
+// ─────────────────────────────
+// Helpers BD
+// ─────────────────────────────
+async function saveTokens(locationId, tokenData) {
   console.log("👉 Guardando en BD. locationId:", locationId);
   const sql = `
     INSERT INTO auth_db (locationid, raw_token)
@@ -38,58 +41,33 @@ async function saveAgency(locationId, tokenData) {
   return locationId;
 }
 
-// 🔎 helper para traer locations donde la app está instalada
-async function getInstalledLocations(tokens) {
-  try {
-    const res = await axios.get(
-      "https://services.leadconnectorhq.com/oauth/installedLocations",
-      {
-        headers: {
-          Authorization: `Bearer ${tokens.access_token}`,
-          Version: "2021-07-28",
-          Accept: "application/json",
-        },
-        params: {
-          companyId: tokens.companyId,
-          userId: tokens.userId,
-          isInstalled: true,
-          appId: process.env.GHL_APP_ID_WA, // opcional si quieres filtrar por ID de app
-          limit: 50,
-        },
-        timeout: 15000,
-      }
-    );
-
-    console.log("📍 installedLocations:", res.data);
-    return res.data?.locations || [];
-  } catch (e) {
-    console.error(
-      "❌ Error llamando /oauth/installedLocations:",
-      e.response?.status,
-      e.response?.data || e.message
-    );
-    return [];
-  }
+async function getTokens(locationId) {
+  const result = await pool.query(
+    "SELECT raw_token FROM auth_db WHERE locationid = $1",
+    [locationId]
+  );
+  return result.rows[0]?.raw_token || null;
 }
 
-
-// -------- ruta de callback OAuth (única) --------
-// -------- ruta de callback OAuth (única) --------
+// ─────────────────────────────
+// OAuth CALLBACK (Agencia)
+// ─────────────────────────────
+// Aquí intercambiamos code -> ACCESS TOKEN de AGENCY (Company)
+// y lo guardamos en la fila especial "__AGENCY__"
 app.get("/oauth/callback", async (req, res) => {
-  const { code, locationId: locationIdFromQuery } = req.query;
+  const { code } = req.query;
 
   if (!code) {
     return res.status(400).send("Falta el parámetro 'code' en la URL de callback.");
   }
 
   try {
-    // 1) Intercambio code -> tokens (usa token de AGENCIA)
     const body = new URLSearchParams({
       client_id: process.env.GHL_CLIENT_ID,
       client_secret: process.env.GHL_CLIENT_SECRET,
       grant_type: "authorization_code",
       code,
-      user_type: "Company",
+      user_type: "Company", // token de AGENCIA
       redirect_uri: process.env.OAUTH_REDIRECT_URI,
     });
 
@@ -104,57 +82,93 @@ app.get("/oauth/callback", async (req, res) => {
         timeout: 15000,
       }
     );
-    console.log("tokens el total", tokenRes)
+
     const tokens = tokenRes.data;
-    console.log("🔐 Tokens recibidos (resumido):", {
+    console.log("🔐 Tokens Agency recibidos (resumido):", {
       userType: tokens.userType,
       companyId: tokens.companyId,
       scopes: tokens.scope,
     });
 
-    // 2) Resolver locationId (query -> tokens -> installedLocations)
-    let locationId =
-      locationIdFromQuery || tokens.locationId || null;
-
-    if (!locationId && tokens.userType === "Company") {
-      console.log("ℹ️ No llegó locationId en query ni en token. Consultando /oauth/installedLocations...");
-      const locations = await getInstalledLocations(tokens);
-
-      if (locations.length > 0) {
-        // 👇 aquí decides cuál usar (primera, o filtrar por nombre, etc.)
-        locationId = locations[0].id;
-        console.log("📍 Usando locationId desde installedLocations:", locationId);
-      } else {
-        console.warn("⚠️ No se encontraron locations instaladas para esta app.");
-      }
+    if (tokens.userType !== "Company") {
+      console.warn("⚠️ El token devuelto no es de tipo Company. userType:", tokens.userType);
     }
 
-    if (!locationId) {
-      console.warn(
-        "⚠️ Aun sin locationId después de todo. No se podrá crear custom menu limitado."
-      );
+    // Guardamos SIEMPRE el token de agencia en una fila fija
+    await saveTokens(AGENCY_ROW_ID, tokens);
+
+    return res.send(
+      "¡App instalada correctamente a nivel agencia! Ya podemos manejar instalaciones de subcuentas vía webhook."
+    );
+  } catch (err) {
+    const status = err.response?.status || 500;
+    const data = err.response?.data || err.message;
+    console.error("Error en /oauth/callback:", status, data);
+    return res.status(status).json({ ok: false, error: data });
+  }
+});
+
+// ─────────────────────────────
+// Webhook de APP (INSTALL / UNINSTALL / etc.)
+// Configura esta URL en el Marketplace de tu App
+// ─────────────────────────────
+app.post("/ghl/app-webhook", async (req, res) => {
+  try {
+    const event = req.body;
+    console.log("🔔 App Webhook recibido:", JSON.stringify(event, null, 2));
+
+    const { type, installType, locationId, companyId } = event;
+
+    // Solo nos interesa INSTALL de tipo Location
+    if (type !== "INSTALL" || installType !== "Location") {
+      console.log("ℹ️ Evento no manejado (tipo distinto de INSTALL/Location).");
+      return res.status(200).json({ ignored: true });
     }
 
-    // 3) Guarda tokens con ese locationId (aunque sea null o 'agency')
-    if (locationId) {
-      await saveAgency(locationId, tokens);
+    if (!locationId || !companyId) {
+      console.warn("⚠️ Webhook INSTALL sin locationId o companyId, se ignora.");
+      return res.status(200).json({ ignored: true });
     }
 
-    // 4) Crear Custom Menu SOLO para la Location que resolvimos
+    // 1) Recuperar el token de Agencia desde la BD
+    const agencyTokens = await getTokens(AGENCY_ROW_ID);
+    if (!agencyTokens || !agencyTokens.access_token) {
+      console.error("❌ No hay tokens de agencia guardados en BD (fila __AGENCY__).");
+      return res.status(200).json({ ok: false, reason: "no_agency_token" });
+    }
+
+    // 2) Pedir token de Location usando /oauth/locationToken
     try {
-      let agencyAuth = null;
-      if (tokens.userType === "Company") {
-        agencyAuth = tokens.access_token;
-      } else if (process.env.GHL_PIT) {
-        agencyAuth = process.env.GHL_PIT;
-      }
+      const locBody = new URLSearchParams({
+        companyId,
+        locationId,
+      });
 
-      if (!agencyAuth) {
-        console.warn("No hay token de agencia ni PIT; omito crear Custom Menu.");
-      } else if (!locationId) {
-        console.warn("No hay locationId; creo Custom Menu general o ninguno.");
-        // Podrías crear un menú global showToAllLocations: true si quieres
-      } else {
+      const locTokenRes = await axios.post(
+        "https://services.leadconnectorhq.com/oauth/locationToken",
+        locBody.toString(),
+        {
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+            Authorization: `Bearer ${agencyTokens.access_token}`,
+            Version: "2021-07-28",
+          },
+          timeout: 15000,
+        }
+      );
+
+      const locationTokens = locTokenRes.data; // userType: "Location"
+      console.log("🔑 Tokens Location obtenidos para:", locationId);
+
+      // 3) Guardar combinando agencyTokens + locationAccess
+      await saveTokens(locationId, {
+        ...agencyTokens,
+        locationAccess: locationTokens,
+      });
+
+      // 4) Crear Custom Menu SOLO para esta Location
+      try {
         const bodyMenu = {
           title: "WhatsApp Bridge",
           url: process.env.CUSTOM_MENU_URL || "https://tu-front-o-panel.com/",
@@ -177,7 +191,7 @@ app.get("/oauth/callback", async (req, res) => {
           bodyMenu,
           {
             headers: {
-              Authorization: `Bearer ${agencyAuth}`,
+              Authorization: `Bearer ${agencyTokens.access_token}`,
               Version: "2021-07-28",
               "Content-Type": "application/json",
               Accept: "application/json",
@@ -186,59 +200,33 @@ app.get("/oauth/callback", async (req, res) => {
           }
         );
 
-        console.log("✅ Custom Menu creado:", createMenuRes.data);
-      }
-    } catch (e) {
-      console.error(
-        "❌ Error creando Custom Menu:",
-        e.response?.status,
-        e.response?.data || e.message
-      );
-    }
-
-    // 5) (Opcional) Token de Location
-    if (tokens.userType === "Company" && locationId) {
-      try {
-        const locParams = new URLSearchParams({
-          companyId: tokens.companyId,
-          locationId,
-        });
-
-        const locTokenRes = await axios.post(
-          "https://services.leadconnectorhq.com/oauth/locationToken",
-          locParams.toString(),
-          {
-            headers: {
-              Accept: "application/json",
-              "Content-Type": "application/x-www-form-urlencoded",
-              Authorization: `Bearer ${tokens.access_token}`,
-              Version: "2021-07-28",
-            },
-            timeout: 15000,
-          }
-        );
-
-        const locationTokens = locTokenRes.data; // userType: "Location"
-        await saveAgency(locationId, { ...tokens, locationAccess: locationTokens });
+        console.log("✅ Custom Menu creado para location:", locationId, createMenuRes.data);
       } catch (e) {
         console.error(
-          "❌ Error obteniendo token de Location:",
+          "❌ Error creando Custom Menu en webhook INSTALL:",
           e.response?.status,
           e.response?.data || e.message
         );
       }
-    }
 
-    return res.send("¡App instalada correctamente! Las credenciales se guardaron en la base de datos.");
-  } catch (err) {
-    const status = err.response?.status || 500;
-    const data = err.response?.data || err.message;
-    console.error("Error en /oauth/callback:", status, data);
-    return res.status(status).json({ ok: false, error: data });
+      return res.status(200).json({ ok: true });
+    } catch (e) {
+      console.error(
+        "❌ Error obteniendo token de Location en webhook INSTALL:",
+        e.response?.status,
+        e.response?.data || e.message
+      );
+      return res.status(200).json({ ok: false, error: "location_token_failed" });
+    }
+  } catch (e) {
+    console.error("❌ Error general en /ghl/app-webhook:", e);
+    return res.status(500).json({ error: "Error interno en app webhook" });
   }
 });
 
-// Ruta de prueba de conexión
+// ─────────────────────────────
+// Rutas de debug / health
+// ─────────────────────────────
 app.get("/health", async (req, res) => {
   try {
     const result = await pool.query("SELECT NOW()");
@@ -249,7 +237,6 @@ app.get("/health", async (req, res) => {
   }
 });
 
-// Solo para debug (mantén consistencia de columnas)
 app.get("/auth_db", async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM auth_db");
@@ -274,6 +261,9 @@ app.post("/insert_auth", async (req, res) => {
   }
 });
 
+// ─────────────────────────────
+// Arranque servidor
+// ─────────────────────────────
 const port = Number(process.env.PORT || process.env.PORT_DB || 3000);
 app.listen(port, "0.0.0.0", () => {
   console.log(`API escuchando en el puerto ${port}`);
