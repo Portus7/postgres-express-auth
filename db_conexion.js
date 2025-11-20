@@ -88,7 +88,7 @@ app.get("/oauth/callback", async (req, res) => {
       client_secret: process.env.GHL_CLIENT_SECRET,
       grant_type: "authorization_code",
       code,
-      user_type: "Company", // token de agency
+      user_type: "Company",
       redirect_uri: process.env.OAUTH_REDIRECT_URI,
     });
 
@@ -103,7 +103,7 @@ app.get("/oauth/callback", async (req, res) => {
         timeout: 15000,
       }
     );
-    console.log(tokens)
+    console.log("tokens el total": tokens)
     const tokens = tokenRes.data;
     console.log("🔐 Tokens recibidos (resumido):", {
       userType: tokens.userType,
