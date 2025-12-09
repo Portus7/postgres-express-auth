@@ -23,20 +23,15 @@ const pool = new Pool({
   ssl: process.env.PGSSLMODE === "require" ? { rejectUnauthorized: false } : false,
 });
 
-// Tabla esperada:
-// CREATE TABLE IF NOT EXISTS auth_db (
-//   locationid TEXT PRIMARY KEY,
-//   raw_token  JSONB NOT NULL
-// );
-
-// ID especial para guardar el token de agencia en auth_db
 const AGENCY_ROW_ID = "__AGENCY__";
+// Asegúrate de que esta URL apunte a tu Frontend (donde está el Dashboard)
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://clicandapp-frontend-web-wa.aqdlt2.easypanel.host";
 
 // ─────────────────────────────
 // Helpers BD
 // ─────────────────────────────
 async function saveTokens(locationId, tokenData) {
-  console.log("👉 Guardando en BD. locationId:", locationId);
+  console.log("👉 Guardando en BD. ID:", locationId);
   const sql = `
     INSERT INTO auth_db (locationid, raw_token)
     VALUES ($1, $2::jsonb)
@@ -56,10 +51,8 @@ async function getTokens(locationId) {
 }
 
 // ─────────────────────────────
-// OAuth CALLBACK (Agencia)
+// OAuth CALLBACK (La Magia ocurre aquí)
 // ─────────────────────────────
-// Intercambia code -> ACCESS TOKEN de AGENCY (Company)
-// y lo guarda en la fila especial "__AGENCY__"
 app.get("/oauth/callback", async (req, res) => {
   const { code } = req.query;
 
@@ -73,7 +66,7 @@ app.get("/oauth/callback", async (req, res) => {
       client_secret: process.env.GHL_CLIENT_SECRET,
       grant_type: "authorization_code",
       code,
-      user_type: "Company", // token de AGENCIA
+      user_type: "Company", // Mantenemos Company como solicitaste
       redirect_uri: process.env.OAUTH_REDIRECT_URI,
     });
 
@@ -90,26 +83,38 @@ app.get("/oauth/callback", async (req, res) => {
     );
 
     const tokens = tokenRes.data;
-    console.log("🔐 Tokens Agency recibidos (resumido):", {
-      userType: tokens.userType,
-      companyId: tokens.companyId,
-      scopes: tokens.scope,
-    });
 
-    if (tokens.userType !== "Company") {
-      console.warn("⚠️ El token devuelto no es de tipo Company. userType:", tokens.userType);
+    // Extraemos IDs para saber qué tipo de instalación es
+    const locationId = tokens.locationId;
+    const companyId = tokens.companyId;
+
+    // CASO 1: Instalación en una Subcuenta (Location)
+    // Esto pasa cuando el usuario elige una subcuenta específica en el popup de GHL
+    if (locationId) {
+      await saveTokens(locationId, tokens);
+      console.log(`✅ Subcuenta instalada: ${locationId}`);
+
+      // Redirigimos al Frontend con el ID para la auto-vinculación
+      return res.redirect(`${FRONTEND_URL}/?new_install=${locationId}`);
     }
 
-    // Guardamos SIEMPRE el token de agencia en una fila fija
-    await saveTokens(AGENCY_ROW_ID, tokens);
+    // CASO 2: Instalación a nivel Agencia (Company)
+    // Esto actualiza el token maestro de la agencia
+    if (companyId) {
+      await saveTokens(AGENCY_ROW_ID, tokens);
+      console.log(`✅ Agencia instalada/actualizada: ${companyId}`);
 
-    return res.send(
-      "¡App instalada correctamente a nivel agencia! Ya podemos manejar instalaciones de subcuentas vía webhook."
-    );
+      return res.redirect(`${FRONTEND_URL}/?msg=agency_installed&company_id=${companyId}`);
+    }
+
+    // Si llegamos aquí, algo raro pasó con la respuesta de GHL
+    console.warn("⚠️ Token recibido sin locationId ni companyId claro:", tokens);
+    return res.redirect(`${FRONTEND_URL}/?error=unknown_install_type`);
+
   } catch (err) {
     const status = err.response?.status || 500;
     const data = err.response?.data || err.message;
-    console.error("Error en /oauth/callback:", status, data);
+    console.error("❌ Error en /oauth/callback:", status, JSON.stringify(data));
     return res.status(status).json({ ok: false, error: data });
   }
 });
