@@ -95,7 +95,7 @@ app.get("/oauth/callback", async (req, res) => {
       console.log(`✅ Subcuenta instalada: ${locationId}`);
 
       // Redirigimos al Frontend con el ID para la auto-vinculación
-      return res.redirect(`${FRONTEND_URL}/?new_install=${locationId}`);
+      //return res.redirect(`${FRONTEND_URL}/?new_install=${locationId}`);
     }
 
     // CASO 2: Instalación a nivel Agencia (Company)
@@ -104,7 +104,7 @@ app.get("/oauth/callback", async (req, res) => {
       await saveTokens(AGENCY_ROW_ID, tokens);
       console.log(`✅ Agencia instalada/actualizada: ${companyId}`);
 
-      return res.redirect(`${FRONTEND_URL}/?msg=agency_installed&company_id=${companyId}`);
+      return res.redirect(`${FRONTEND_URL}/?msg=agency_installed&new_install=${companyId}`);
     }
 
     // Si llegamos aquí, algo raro pasó con la respuesta de GHL
